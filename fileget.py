@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+
+# IPK 1. project
+# Author: Karel Norek, xnorek01
+
 import socket
 import argparse
 import re
