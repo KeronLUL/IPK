@@ -1,8 +1,9 @@
-#!/usr/bin/env python3.8
+#!/usr/bin/env python3
 import socket
 import argparse
 import re
 import sys
+import os
 
 # Argument parser
 def argument_parser():
@@ -14,13 +15,13 @@ def argument_parser():
     server = re.match(r"^fsp://", args.f)
     if not server:
         sys.exit("Invalid arguments")
-
     foo = args.f.split("//")
     ip = args.n.split(":")
+
     port = re.match(r"^[\d]+$", ip[1])
-    
     if not port:
         sys.exit("Invalid port")
+
     return ip[0], int(ip[1]), foo[1]
 
 # Function that gets ip of file server from name server using UDP connection
@@ -36,7 +37,6 @@ def NSP(host, port, server):
 
     if message == "ERR Syntax" or message == "ERR Not Found":
         sys.exit("Wrong syntax or server not found")
-
     ip = message.split(" ")
     return ip
 
@@ -47,10 +47,9 @@ def FSP(file_server_ip, path):
     sock.connect((file_server_ip[0], int(file_server_ip[1])))
     message = "GET " + path + " FSP/1.0\r\nHostname: Test\r\nAgent: xnorek01\r\n\r\n"
     sock.send(message.encode())
-    
+
     header = sock.recv(4096)
     test = re.match(b"FSP/1.0\sSuccess\r\nLength:\s*[0-9]+\s*\r\n\r\n", header)
-
     if not test:
         if re.match(b"FSP/1.0\sNot Found", header):
             sys.exit("File not found")
@@ -64,7 +63,6 @@ def FSP(file_server_ip, path):
     line = get_length[1].split(b"\r", 1)
     write = line[1].split(b"\n\r\n")
     length = int(line[0])
-
     name = path.split("/")
     name = name[-1]
     try:
@@ -78,6 +76,8 @@ def FSP(file_server_ip, path):
         length -= 2048
         f.write(test)
     f.close()
+    if os.path.getsize(name) != int(line[0]):
+        sys.exit("File size doesn't match")
     sock.close()
 
 def FSP_check(file_server_ip, path):
