@@ -5,7 +5,7 @@
 
 class ArgumentParser {
     public:
-        std::string interface;
+        std::string interface = "";
         int port = -1;
         unsigned n = 1;
         bool tcp = false;
@@ -31,8 +31,8 @@ class ArgumentParser {
         };
 
         if (argc == 1){
-            std::cerr << "Invalid arguments\n";
-            exit(1);
+            showInterface = true;
+            return;
         }
 
         int opt = 0, optionIndex;
@@ -53,11 +53,11 @@ class ArgumentParser {
                     }
                     catch (const std::invalid_argument& ia){
                         std::cerr << "Invalid argument " << optarg << "\n";
-                        std::cerr << "Argument " << optarg << " out of range\n";
+                        
                         exit(1);
                     }
                     catch (const std::out_of_range& oor){
-                        printHelp();
+                        std::cerr << "Argument " << optarg << " out of range\n";
                         exit(1);
                     }
                     break;
@@ -104,11 +104,79 @@ class ArgumentParser {
                     exit(1);
             }
         }
+        if (interface != "" && showInterface){
+            std::cerr << "Invalid arguments\n";
+            exit(1);
+        }
     }
 };
+
+void printDevices(){
+    char errbuf[PCAP_ERRBUF_SIZE];
+    pcap_if_t* interfaces;
+
+    if (pcap_findalldevs(&interfaces, errbuf) != PCAP_ERROR){
+        for (pcap_if_t* interface = interfaces; interface; interface = interface->next){
+            std::cout << interface->name << "\n";
+        }
+        pcap_freealldevs(interfaces);
+    } else {
+        std::cerr << errbuf << "\n";
+        exit(1);
+    }
+}
+
+void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet){
+    const size_t size = header->len;
+    std::cout << size << "\n";
+}
+
+void runSniffer(ArgumentParser args){
+    char errbuf[PCAP_ERRBUF_SIZE];
+    const std::string filter = "ip or ip6";
+    struct bpf_program fp;
+    pcap_t* handle; 
+    bpf_u_int32 mask;
+    bpf_u_int32 net;
+    
+    if (pcap_lookupnet(args.interface.c_str(), &net, &mask, errbuf) == -1) {
+        std::cerr << "Couldn't get netmask for device " << args.interface << ": " << errbuf << "\n";
+        net = 0;
+        mask = 0;
+    }
+    if ((handle = pcap_open_live(args.interface.c_str(), BUFSIZ, 1, 1000, errbuf)) == nullptr){
+        std::cerr << errbuf << "\n";
+        exit(1);
+    }
+    if (pcap_compile(handle, &fp, filter.c_str(), 0, net) == -1) {
+        std::cerr << "Couldn't parse filter " << filter << ": " << pcap_geterr(handle) << "\n";
+        pcap_close(handle);
+        exit(1);
+    }
+    if (pcap_setfilter(handle, &fp) == -1) {
+        std::cerr << "Couldn't install filter " << filter << ": " << pcap_geterr(handle) << "\n";
+        pcap_freecode(fp);
+        pcap_close(handle);
+        exit(1);
+    }
+    if (pcap_loop(handle, args.n, got_packet, nullptr) == PCAP_ERROR){
+        exit(1);
+    }
+    
+    pcap_freecode(fp);
+    pcap_close(handle);
+}
 
 int main(int argc, char *argv[]) {
     ArgumentParser args;
     args.argumentParser(argc, argv);
+
+    if (args.showInterface) {
+        printDevices();
+        return 0;
+    }
+
+    runSniffer(args);
+
     return 0;
 }
