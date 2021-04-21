@@ -2,6 +2,7 @@
 #include <getopt.h>
 #include <cstring>
 #include <pcap/pcap.h>
+#include <signal.h>
 
 class ArgumentParser {
     public:
@@ -131,9 +132,31 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
     std::cout << size << "\n";
 }
 
+std::string buildFilter(ArgumentParser args){
+    std::string filter = "(ip or ip6)";
+
+    if (args.port != -1) {
+        filter += " and port " + std::to_string(args.port);
+    }
+    if (args.tcp) {
+        filter += " and (tcp";
+    }
+    if (args.udp) {
+        filter += " or udp";
+    }
+    if (args.arp) {
+        filter += " or arp";
+    }
+    if (args.icmp) {
+        filter += " or (icmp or icmp6))";
+    }else filter += ")";
+
+    return filter;
+}
+
 void runSniffer(ArgumentParser args){
     char errbuf[PCAP_ERRBUF_SIZE];
-    const std::string filter = "ip or ip6";
+    const std::string filter = buildFilter(args);
     struct bpf_program fp;
     pcap_t* handle; 
     bpf_u_int32 mask;
@@ -155,15 +178,16 @@ void runSniffer(ArgumentParser args){
     }
     if (pcap_setfilter(handle, &fp) == -1) {
         std::cerr << "Couldn't install filter " << filter << ": " << pcap_geterr(handle) << "\n";
-        pcap_freecode(fp);
+        pcap_freecode(&fp);
         pcap_close(handle);
         exit(1);
     }
+
     if (pcap_loop(handle, args.n, got_packet, nullptr) == PCAP_ERROR){
         exit(1);
     }
-    
-    pcap_freecode(fp);
+
+    pcap_freecode(&fp);
     pcap_close(handle);
 }
 
