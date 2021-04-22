@@ -15,6 +15,8 @@
 #include <netinet/ip6.h> 
 #include <net/if_arp.h>
 
+//TODO: ipv6, ctrl+c, timezone
+
 #define SIZE_ETHERNET 14
 #define LINE_WIDTH 16
 
@@ -162,30 +164,50 @@ void printHeaderIP(const struct pcap_pkthdr *header, const struct ip *iph, const
     std::string dst = inet_ntoa(iph->ip_dst);
     std::string srcPort;
     std::string dstPort;
+    
     if (type == IPPROTO_TCP){
         struct tcphdr* tcph = (struct tcphdr*)(packet + (iph->ip_hl * 4) + SIZE_ETHERNET);
         srcPort = std::to_string(ntohs(tcph->source));
         dstPort = std::to_string(ntohs(tcph->dest));
         std::string timestamp = getTime(header);
         std::cout << timestamp << " " << src << " : " << srcPort << " > " << dst << " : " << dstPort << ", length " << header->len << " bytes" << "\n\n";
-        return;
     }else if (type == IPPROTO_UDP){
         struct udphdr* udph = (struct udphdr*)(packet + (iph->ip_hl * 4) + SIZE_ETHERNET);
         srcPort = std::to_string(ntohs(udph->source));
         dstPort = std::to_string(ntohs(udph->dest));
         std::string timestamp = getTime(header);
         std::cout << timestamp << " " << src << " : " << srcPort << " > " << dst << " : " << dstPort << ", length " << header->len << " bytes" << "\n\n";
-        return;
     }else if (type == IPPROTO_ICMP){
         std::string timestamp = getTime(header);
         std::cout << timestamp << " " << src << " > " << dst << ", length " << header->len << " bytes" << "\n\n";
-        return;
     }
 }
 
 void printHeaderIPV6(const struct pcap_pkthdr *header, const struct ip6_hdr *iph, const u_char *packet, u_int8_t type){
-    std::string src = inet_ntop(iph->ip6_src);
-    std::string dst = inet_ntop(iph->ip6_dst);
+    std::string srcPort;
+    std::string dstPort;
+    char srcIP6[INET_ADDRSTRLEN];
+    char dstIP6[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET6, &(iph->ip6_src), srcIP6, INET6_ADDRSTRLEN);
+	inet_ntop(AF_INET6, &(iph->ip6_dst), dstIP6, INET6_ADDRSTRLEN);
+
+    if (type == IPPROTO_TCP){
+        struct tcphdr* tcph = (struct tcphdr*)(packet + 40 + SIZE_ETHERNET);
+        srcPort = std::to_string(ntohs(tcph->source));
+        dstPort = std::to_string(ntohs(tcph->dest));
+        std::string timestamp = getTime(header);
+        std::cout << timestamp << " " << srcIP6 << " : " << srcPort << " > " << dstIP6 << " : " << dstPort << ", length " << header->len << " bytes" << "\n\n";
+    }else if (type == IPPROTO_UDP){
+        struct udphdr* udph = (struct udphdr*)(packet + 40 + SIZE_ETHERNET);
+        srcPort = std::to_string(ntohs(udph->source));
+        dstPort = std::to_string(ntohs(udph->dest));
+        std::string timestamp = getTime(header);
+        std::cout << timestamp << " " << srcIP6 << " : " << srcPort << " > " << dstIP6 << " : " << dstPort << ", length " << header->len << " bytes" << "\n\n";
+    }else if (type == IPPROTO_ICMPV6){
+        std::string timestamp = getTime(header);
+        std::cout << timestamp << " " << srcIP6 << " > " << dstIP6 << ", length " << header->len << " bytes" << "\n\n";
+    }
+
 }
 
 void printHeaderARP(const struct pcap_pkthdr *header, const struct ether_arp *arph){
@@ -262,9 +284,9 @@ void printPacket(const u_char *packet, size_t len){
     return;
 }
 
-void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet){
+void gotPacket(u_char *args, const struct pcap_pkthdr *header, const u_char *packet){
     struct ether_header *p = (struct ether_header *)packet;
-    size_t size = header->len;
+    size_t size = header->len;    
     
 	if (ntohs(p->ether_type) == ETHERTYPE_IP) {
         struct ip *iph = (struct ip*)(packet + SIZE_ETHERNET);
@@ -346,7 +368,7 @@ int runSniffer(ArgumentParser args){
         pcap_close(handle);
         return 1;
     }
-    if (pcap_loop(handle, args.n, got_packet, nullptr) == PCAP_ERROR){
+    if (pcap_loop(handle, args.n, gotPacket, nullptr) == PCAP_ERROR){
         return 1;
     }
 
