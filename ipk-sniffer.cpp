@@ -1,19 +1,22 @@
 #include <iostream>
 #include <iomanip>
-#include <ctype.h>
 #include <getopt.h>
 #include <cstring>
 #include <time.h> 
 #include <pcap/pcap.h>
 #include <net/ethernet.h>
+#include <arpa/inet.h>
 #include <netinet/udp.h>
 #include <netinet/tcp.h>
 #include <netinet/ip_icmp.h>
+#include <netinet/ether.h>
 #include <netinet/ip.h>
 #include <netinet/in.h>
-
+#include <netinet/ip6.h> 
+#include <net/if_arp.h>
 
 #define SIZE_ETHERNET 14
+#define LINE_WIDTH 16
 
 class ArgumentParser {
     public:
@@ -46,7 +49,6 @@ class ArgumentParser {
                 showInterface = true;
                 return 0;
             }
-
             int opt = 0, optionIndex;
             while ((opt = getopt_long(argc, argv, shortOps, longOpts, &optionIndex)) != EOF) {
                 switch (opt) {
@@ -139,6 +141,22 @@ int printDevices(){
     return 0;
 }
 
+std::string getTime(const struct pcap_pkthdr *header){
+    time_t time_sec = header->ts.tv_sec;
+    const struct tm* locTime = localtime(&time_sec);
+    const struct tm* globTime = gmtime(&time_sec);
+    int i = (globTime->tm_hour) - locTime->tm_hour;
+    std::string timezone;
+    if (i == 0){
+        timezone = "z";
+    }else timezone = std::to_string(i);
+
+    std::string time = std::to_string(locTime->tm_hour) + ":" + std::to_string(locTime->tm_min) + ":" + std::to_string(locTime->tm_sec) + "." + std::to_string(header->ts.tv_usec) + timezone;
+    std::string year = std::to_string(locTime->tm_year + 1900) + "-" + std::to_string(locTime->tm_mon + 1) + "-" + std::to_string(locTime->tm_mday) + "T";
+    std::string timestamp = year + time;
+    return timestamp;
+}
+
 void printHeaderIP(const struct pcap_pkthdr *header, const struct ip *iph, const u_char *packet, u_int8_t type){
     std::string src = inet_ntoa(iph->ip_src);
     std::string dst = inet_ntoa(iph->ip_dst);
@@ -148,58 +166,65 @@ void printHeaderIP(const struct pcap_pkthdr *header, const struct ip *iph, const
         struct tcphdr* tcph = (struct tcphdr*)(packet + (iph->ip_hl * 4) + SIZE_ETHERNET);
         srcPort = std::to_string(ntohs(tcph->source));
         dstPort = std::to_string(ntohs(tcph->dest));
-            
+        std::string timestamp = getTime(header);
+        std::cout << timestamp << " " << src << " : " << srcPort << " > " << dst << " : " << dstPort << ", length " << header->len << " bytes" << "\n\n";
+        return;
     }else if (type == IPPROTO_UDP){
         struct udphdr* udph = (struct udphdr*)(packet + (iph->ip_hl * 4) + SIZE_ETHERNET);
         srcPort = std::to_string(ntohs(udph->source));
         dstPort = std::to_string(ntohs(udph->dest));
+        std::string timestamp = getTime(header);
+        std::cout << timestamp << " " << src << " : " << srcPort << " > " << dst << " : " << dstPort << ", length " << header->len << " bytes" << "\n\n";
+        return;
+    }else if (type == IPPROTO_ICMP){
+        std::string timestamp = getTime(header);
+        std::cout << timestamp << " " << src << " > " << dst << ", length " << header->len << " bytes" << "\n\n";
+        return;
     }
-
-    time_t time_sec = header->ts.tv_sec;
-    const struct tm* locTime = localtime(&time_sec);
-    const struct tm* globTime = gmtime(&time_sec);
-    int i = (globTime->tm_hour) - locTime->tm_hour;
-    std::string timezone;
-    if (i == 0){
-        timezone = "Z";
-    }else timezone = std::to_string(i);
-
-    std::string time = std::to_string(locTime->tm_hour) + ":" + std::to_string(locTime->tm_min) + ":" + std::to_string(locTime->tm_sec) + "." + std::to_string(header->ts.tv_usec) + timezone;
-    std::string year = std::to_string(locTime->tm_year + 1900) + "-" + std::to_string(locTime->tm_mon + 1) + "-" + std::to_string(locTime->tm_mday) + "T";
-    std::string timestamp = year + time;
-
-    std::cout << timestamp << " " << src << " : " << srcPort << " > " << dst << " : " << dstPort << ", length " << header->len << " bytes" << "\n\n";
 }
 
-void print_hex_ascii_line(const u_char *packet, size_t len, int offset){
-	size_t gap;
-	const u_char *character;
+void printHeaderIPV6(const struct pcap_pkthdr *header, const struct ip6_hdr *iph, const u_char *packet, u_int8_t type){
+    std::string src = inet_ntop(iph->ip6_src);
+    std::string dst = inet_ntop(iph->ip6_dst);
+}
 
-    std::cout << "0x" << std::setfill('0') << std::setw(4) << std::hex << offset << ": ";
+void printHeaderARP(const struct pcap_pkthdr *header, const struct ether_arp *arph){
+    std::string timestamp = getTime(header);
+    std::cout << timestamp << " ";
+    for (int i = 0; i < ETH_ALEN; i++){
+        printf("%02x", arph->arp_sha[i]);
+        if (i < ETH_ALEN - 1){
+            printf(":");
+        } 
+    }
+    std::cout << " > "; 
+    for (int i = 0; i < ETH_ALEN; i++){
+        printf("%02x", arph->arp_tha[i]);
+        if (i < ETH_ALEN - 1){
+            printf(":");
+        } 
+    }
+    std::cout << ", length " << header->len << " bytes" << std::endl << std::endl;;
+}
+
+void printLine(const u_char *packet, size_t len, int offset){
+	size_t i;
+    const u_char *character;
     
+    std::cout << "0x" << std::setfill('0') << std::setw(4) << std::hex << offset << ": ";
 	character = packet;
-	for(size_t i = 0; i < len; i++) {
+	for(i = 0; i < len; i++) {
         std::cout << std::setw(2) << std::setfill('0') << std::hex << (int)(unsigned char)*character << " ";
 		character++;
-        if (i == 7){
-            std::cout << " ";
-        }
 	}
 
-	/* print space to handle line less than 8 bytes */
-	if (len < 8)
-		std::cout << " ";
-
-	if (len < 16) {
-		gap = 16 - len;
-		for (size_t  i = 0; i < gap; i++) {
-			std::cout << "   ";
-		}
-	}
-	std::cout << " ";
+    for(; i < LINE_WIDTH; i++) {
+	    std::cout << "   ";
+    }
+    std::cout << " ";
 
 	character = packet;
-	for(size_t i = 0; i < len; i++) {
+	for(i = 0; i < len; i++) {
 		if (isprint(*character))
             std::cout << *character;
 		else
@@ -210,28 +235,25 @@ void print_hex_ascii_line(const u_char *packet, size_t len, int offset){
     return;
 }
 
-void printPacket(const u_char *payload, size_t len){
-	size_t len_rem = len;
-	size_t line_width = 16;			
+void printPacket(const u_char *packet, size_t len){
+	size_t len_rem = len;		
 	size_t line_len;
 	int offset = 0;					
-	const u_char *ch = payload;
+	const u_char *character = packet;
 
 	if (len != 0){
-        if (len <= line_width) {
-            print_hex_ascii_line(ch, len, offset);
+        if (len <= LINE_WIDTH) {
+            printLine(character, len, offset);
             return;
         }
-
         while(true) {
-            line_len = line_width % len_rem;
-            print_hex_ascii_line(ch, line_len, offset);
+            line_len = LINE_WIDTH % len_rem;
+            printLine(character, line_len, offset);
             len_rem = len_rem - line_len;
-            ch = ch + line_len;
-            offset = offset + line_width;
-
-            if (len_rem <= line_width) {
-                print_hex_ascii_line(ch, len_rem, offset);
+            character = character + line_len;
+            offset = offset + LINE_WIDTH;
+            if (len_rem <= LINE_WIDTH) {
+                printLine(character, len_rem, offset);
                 break;
             }
         }
@@ -241,21 +263,22 @@ void printPacket(const u_char *payload, size_t len){
 }
 
 void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet){
-    struct ether_header *p = (struct ether_header *) packet;
-	if (p->ether_type != ETHERTYPE_IPV6) {
+    struct ether_header *p = (struct ether_header *)packet;
+    size_t size = header->len;
+    
+	if (ntohs(p->ether_type) == ETHERTYPE_IP) {
         struct ip *iph = (struct ip*)(packet + SIZE_ETHERNET);
-        size_t size = header->len;
-       
-        if (iph->ip_p == IPPROTO_TCP){
-            printHeaderIP(header, iph, packet, iph->ip_p);
-            printPacket(packet, size);
-        }else if (iph->ip_p == IPPROTO_UDP){
-            printHeaderIP(header, iph, packet, iph->ip_p);
-            printPacket(packet, size);
-        }else if (iph->ip_p == IPPROTO_ICMP){
-            printHeaderIP(header, iph, packet, iph->ip_p);
-            printPacket(packet, size);
-        }
+        printHeaderIP(header, iph, packet, iph->ip_p);
+        printPacket(packet, size);
+    }else if (ntohs(p->ether_type) == ETHERTYPE_ARP) {
+        struct ether_arp *arph = (struct ether_arp *)(packet + SIZE_ETHERNET);
+        printHeaderARP(header, arph);
+        printPacket(packet, size);
+    }else if(ntohs(p->ether_type) == ETHERTYPE_IPV6) {
+        struct ip6_hdr *iph = (struct ip6_hdr*)(packet + SIZE_ETHERNET);
+        printHeaderIPV6(header, iph, packet, iph->ip6_ctlun.ip6_un1.ip6_un1_nxt);
+        printPacket(packet, size);
+        
     }
 }
 
@@ -289,10 +312,9 @@ std::string buildFilter(ArgumentParser args){
         }else filter += "(udp";
     }
     
-    if (args.tcp || args.udp){
+    if (args.tcp || args.udp || args.arp){
         filter += ")";
     }
-
     return filter;
 }
 
@@ -309,7 +331,6 @@ int runSniffer(ArgumentParser args){
         net = 0;
         mask = 0;
     }
-
     if ((handle = pcap_open_live(args.interface.c_str(), BUFSIZ, 1, 1000, errbuf)) == nullptr){
         std::cerr << errbuf << "\n";
         return 1;
@@ -325,7 +346,6 @@ int runSniffer(ArgumentParser args){
         pcap_close(handle);
         return 1;
     }
-
     if (pcap_loop(handle, args.n, got_packet, nullptr) == PCAP_ERROR){
         return 1;
     }
