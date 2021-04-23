@@ -1,6 +1,7 @@
 #include <iostream>
 #include <iomanip>
 #include <getopt.h>
+#include <signal.h>
 #include <cstring>
 #include <time.h> 
 #include <pcap/pcap.h>
@@ -15,9 +16,8 @@
 #include <netinet/ip6.h> 
 #include <net/if_arp.h>
 
-//TODO: ipv6, ctrl+c, timezone
-
 #define SIZE_ETHERNET 14
+#define IPV6_HDR_LENGTH 40
 #define LINE_WIDTH 16
 
 class ArgumentParser {
@@ -32,11 +32,19 @@ class ArgumentParser {
         bool showInterface = false;
     
         void printHelp(){
-            std::cout << "pepga\n";
+            std::cout << "Packet sniffer" << std::endl;
+            std::cout << "Usage:" << std::endl;
+            std::cout << "[-i interface| --interface interface] - sniff on given interface" << std::endl;
+            std::cout << "{-p port} - sniff on given port" << std::endl;
+            std::cout << "[--tcp|-t] - sniff only tcp packets" << std::endl;
+            std::cout << "[--udp|-u] - sniff only tcp packets" << std::endl;
+            std::cout << "[--arp] - sniff only tcp packets" << std::endl;
+            std::cout << "[--icmp] - sniff only tcp packets" << std::endl;
+            std::cout << "{-n num} - number of packets to sniff" << std::endl;
         }
 
         int argumentParser(int argc, char *argv[]){
-            const char* const shortOps = ":i:p:tun:;";
+            const char* const shortOps = ":i:p:thun:;";
             const struct option longOpts[] = {
                 {"interface", optional_argument, nullptr, 'i'},
                 {"tcp", no_argument, nullptr, 't'},
@@ -112,7 +120,7 @@ class ArgumentParser {
                         break;
                     case 'h':
                         printHelp();
-                        return 0;
+                        exit(0);
                     case '?':
                     default:
                         std::cerr << "Invalid arguments\n";
@@ -127,17 +135,22 @@ class ArgumentParser {
         }
 };
 
+void signalHandler(int s){
+    std::cerr << "Caught signal " << s << std::endl;
+    exit(1); 
+}
+
 int printDevices(){
     char errbuf[PCAP_ERRBUF_SIZE];
     pcap_if_t* interfaces;
 
     if (pcap_findalldevs(&interfaces, errbuf) != PCAP_ERROR){
         for (pcap_if_t* interface = interfaces; interface; interface = interface->next){
-            std::cout << interface->name << "\n";
+            std::cout << interface->name << std::endl;
         }
         pcap_freealldevs(interfaces);
     } else {
-        std::cerr << errbuf << "\n";
+        std::cerr << errbuf << std::endl;
         return 1;
     }
     return 0;
@@ -145,16 +158,10 @@ int printDevices(){
 
 std::string getTime(const struct pcap_pkthdr *header){
     time_t time_sec = header->ts.tv_sec;
-    const struct tm* locTime = localtime(&time_sec);
     const struct tm* globTime = gmtime(&time_sec);
-    int i = (globTime->tm_hour) - locTime->tm_hour;
-    std::string timezone;
-    if (i == 0){
-        timezone = "z";
-    }else timezone = std::to_string(i);
-
-    std::string time = std::to_string(locTime->tm_hour) + ":" + std::to_string(locTime->tm_min) + ":" + std::to_string(locTime->tm_sec) + "." + std::to_string(header->ts.tv_usec) + timezone;
-    std::string year = std::to_string(locTime->tm_year + 1900) + "-" + std::to_string(locTime->tm_mon + 1) + "-" + std::to_string(locTime->tm_mday) + "T";
+    std::string timezone = "z";
+    std::string year = std::to_string(globTime->tm_year + 1900) + "-" + std::to_string(globTime->tm_mon + 1) + "-" + std::to_string(globTime->tm_mday) + "T";
+    std::string time = std::to_string(globTime->tm_hour) + ":" + std::to_string(globTime->tm_min) + ":" + std::to_string(globTime->tm_sec) + "." + std::to_string(header->ts.tv_usec) + timezone;
     std::string timestamp = year + time;
     return timestamp;
 }
@@ -179,7 +186,7 @@ void printHeaderIP(const struct pcap_pkthdr *header, const struct ip *iph, const
         std::cout << timestamp << " " << src << " : " << srcPort << " > " << dst << " : " << dstPort << ", length " << header->len << " bytes" << "\n\n";
     }else if (type == IPPROTO_ICMP){
         std::string timestamp = getTime(header);
-        std::cout << timestamp << " " << src << " > " << dst << ", length " << header->len << " bytes" << "\n\n";
+        std::cout << timestamp << " " << src << " > " << dst << ", length " << header->len << " bytes" << std::endl << std::endl;
     }
 }
 
@@ -192,25 +199,25 @@ void printHeaderIPV6(const struct pcap_pkthdr *header, const struct ip6_hdr *iph
 	inet_ntop(AF_INET6, &(iph->ip6_dst), dstIP6, INET6_ADDRSTRLEN);
 
     if (type == IPPROTO_TCP){
-        struct tcphdr* tcph = (struct tcphdr*)(packet + 40 + SIZE_ETHERNET);
+        struct tcphdr* tcph = (struct tcphdr*)(packet + IPV6_HDR_LENGTH + SIZE_ETHERNET);
         srcPort = std::to_string(ntohs(tcph->source));
         dstPort = std::to_string(ntohs(tcph->dest));
         std::string timestamp = getTime(header);
-        std::cout << timestamp << " " << srcIP6 << " : " << srcPort << " > " << dstIP6 << " : " << dstPort << ", length " << header->len << " bytes" << "\n\n";
+        std::cout << timestamp << " " << srcIP6 << " : " << srcPort << " > " << dstIP6 << " : " << dstPort << ", length " << header->len << " bytes" << std::endl << std::endl;
     }else if (type == IPPROTO_UDP){
-        struct udphdr* udph = (struct udphdr*)(packet + 40 + SIZE_ETHERNET);
+        struct udphdr* udph = (struct udphdr*)(packet + IPV6_HDR_LENGTH + SIZE_ETHERNET);
         srcPort = std::to_string(ntohs(udph->source));
         dstPort = std::to_string(ntohs(udph->dest));
         std::string timestamp = getTime(header);
-        std::cout << timestamp << " " << srcIP6 << " : " << srcPort << " > " << dstIP6 << " : " << dstPort << ", length " << header->len << " bytes" << "\n\n";
+        std::cout << timestamp << " " << srcIP6 << " : " << srcPort << " > " << dstIP6 << " : " << dstPort << ", length " << header->len << " bytes" << std::endl << std::endl;
     }else if (type == IPPROTO_ICMPV6){
         std::string timestamp = getTime(header);
-        std::cout << timestamp << " " << srcIP6 << " > " << dstIP6 << ", length " << header->len << " bytes" << "\n\n";
+        std::cout << timestamp << " " << srcIP6 << " > " << dstIP6 << ", length " << header->len << " bytes" << std::endl << std::endl;
     }
 
 }
 
-void printHeaderARP(const struct pcap_pkthdr *header, const struct ether_arp *arph){
+void printHeaderARP(const struct pcap_pkthdr *header, const struct ether_arp *arph, const struct ether_header *dest){
     std::string timestamp = getTime(header);
     std::cout << timestamp << " ";
     for (int i = 0; i < ETH_ALEN; i++){
@@ -221,7 +228,7 @@ void printHeaderARP(const struct pcap_pkthdr *header, const struct ether_arp *ar
     }
     std::cout << " > "; 
     for (int i = 0; i < ETH_ALEN; i++){
-        printf("%02x", arph->arp_tha[i]);
+        printf("%02x", dest->ether_dhost[i]);
         if (i < ETH_ALEN - 1){
             printf(":");
         } 
@@ -239,6 +246,7 @@ void printLine(const u_char *packet, size_t len, int offset){
         std::cout << std::setw(2) << std::setfill('0') << std::hex << (int)(unsigned char)*character << " ";
 		character++;
 	}
+    std::cout << std::dec;
 
     for(; i < LINE_WIDTH; i++) {
 	    std::cout << "   ";
@@ -286,7 +294,7 @@ void printPacket(const u_char *packet, size_t len){
 
 void gotPacket(u_char *args, const struct pcap_pkthdr *header, const u_char *packet){
     struct ether_header *p = (struct ether_header *)packet;
-    size_t size = header->len;    
+    size_t size = header->len;
     
 	if (ntohs(p->ether_type) == ETHERTYPE_IP) {
         struct ip *iph = (struct ip*)(packet + SIZE_ETHERNET);
@@ -294,13 +302,12 @@ void gotPacket(u_char *args, const struct pcap_pkthdr *header, const u_char *pac
         printPacket(packet, size);
     }else if (ntohs(p->ether_type) == ETHERTYPE_ARP) {
         struct ether_arp *arph = (struct ether_arp *)(packet + SIZE_ETHERNET);
-        printHeaderARP(header, arph);
+        printHeaderARP(header, arph, p);
         printPacket(packet, size);
     }else if(ntohs(p->ether_type) == ETHERTYPE_IPV6) {
         struct ip6_hdr *iph = (struct ip6_hdr*)(packet + SIZE_ETHERNET);
         printHeaderIPV6(header, iph, packet, iph->ip6_ctlun.ip6_un1.ip6_un1_nxt);
         printPacket(packet, size);
-        
     }
 }
 
@@ -325,7 +332,6 @@ std::string buildFilter(ArgumentParser args){
             filter += " and (tcp";
         }else filter += "(tcp";
     }
-
     if (args.udp) {
         if (args.tcp) {
             filter += " or udp";
@@ -333,7 +339,6 @@ std::string buildFilter(ArgumentParser args){
             filter += " and (udp";
         }else filter += "(udp";
     }
-    
     if (args.tcp || args.udp || args.arp){
         filter += ")";
     }
@@ -349,21 +354,21 @@ int runSniffer(ArgumentParser args){
     bpf_u_int32 net;
 
     if (pcap_lookupnet(args.interface.c_str(), &net, &mask, errbuf) == -1) {
-        std::cerr << errbuf << "\n";
+        std::cerr << errbuf << std::endl;
         net = 0;
         mask = 0;
     }
     if ((handle = pcap_open_live(args.interface.c_str(), BUFSIZ, 1, 1000, errbuf)) == nullptr){
-        std::cerr << errbuf << "\n";
+        std::cerr << errbuf << std::endl;
         return 1;
     }
     if (pcap_compile(handle, &fp, filter.c_str(), 0, net) == -1) {
-        std::cerr << "Couldn't parse filter " << filter << ": " << pcap_geterr(handle) << "\n";
+        std::cerr << "Couldn't parse filter " << filter << ": " << pcap_geterr(handle) << std::endl;
         pcap_close(handle);
         return 1;
     }
     if (pcap_setfilter(handle, &fp) == -1) {
-        std::cerr << "Couldn't install filter " << filter << ": " << pcap_geterr(handle) << "\n";
+        std::cerr << "Couldn't install filter " << filter << ": " << pcap_geterr(handle) << std::endl;
         pcap_freecode(&fp);
         pcap_close(handle);
         return 1;
@@ -378,6 +383,12 @@ int runSniffer(ArgumentParser args){
 }
 
 int main(int argc, char *argv[]) {
+    struct sigaction sigIntHandler;
+    sigIntHandler.sa_handler = signalHandler;
+    sigemptyset(&sigIntHandler.sa_mask);
+    sigIntHandler.sa_flags = 0;
+    sigaction(SIGINT, &sigIntHandler, NULL);
+
     ArgumentParser args;
     if (args.argumentParser(argc, argv)){
         return 1;
