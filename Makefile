@@ -1,5 +1,6 @@
 CC = g++
 
+CFLAGS = -pedantic
 LDFLAGS = -lpcap
 
 TARGET = ipk-sniffer
@@ -7,7 +8,7 @@ TARGET = ipk-sniffer
 all: $(TARGET)
 
 $(TARGET): $(TARGET).cpp
-			$(CC) $(TARGET).cpp -o $(TARGET) $(LDFLAGS)
+			$(CC) $(CFLAGS) $(TARGET).cpp -o $(TARGET) $(LDFLAGS)
 
 clean:
 	$(RM) $(TARGET)
