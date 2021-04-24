@@ -12,3 +12,6 @@ $(TARGET): $(TARGET).cpp
 
 clean:
 	$(RM) $(TARGET)
+
+tar:
+	tar -cvf xnorek01.tar ipk-sniffer.cpp Makefile manual.pdf README.md

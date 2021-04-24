@@ -1,3 +1,9 @@
+/**
+* IPK project 2 - ZETA (packet sniffer)
+* @author Karel Norek, xnorek01
+* @date 24.04.2021
+*/
+
 #include <iostream>
 #include <iomanip>
 #include <getopt.h>
