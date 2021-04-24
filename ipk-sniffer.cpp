@@ -394,6 +394,8 @@ std::string buildFilter(ArgumentParser args){
     if (args.tcp) {
         if (args.port != -1){
             filter += " and (tcp";
+        }else if (args.icmp || args.arp) {
+            filter += "or (tcp";
         }else filter += "(tcp";
     }
     if (args.udp) {
@@ -401,6 +403,8 @@ std::string buildFilter(ArgumentParser args){
             filter += " or udp";
         }else if (args.port != -1){
             filter += " and (udp";
+        }else if (args.icmp || args.arp) {
+            filter += "or (udp";
         }else filter += "(udp";
     }
     if (args.tcp || args.udp || args.arp){
