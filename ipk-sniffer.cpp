@@ -20,6 +20,9 @@
 #define IPV6_HDR_LENGTH 40
 #define LINE_WIDTH 16
 
+/**
+* Class for parsing arguments
+*/
 class ArgumentParser {
     public:
         std::string interface = "";
@@ -30,7 +33,10 @@ class ArgumentParser {
         bool arp = false;
         bool icmp = false;
         bool showInterface = false;
-    
+
+        /**
+        * Print help
+        */
         void printHelp(){
             std::cout << "Packet sniffer" << std::endl;
             std::cout << "Usage:" << std::endl;
@@ -43,6 +49,9 @@ class ArgumentParser {
             std::cout << "{-n num} - number of packets to sniff" << std::endl;
         }
 
+        /**
+        * Parse arguments
+        */
         int argumentParser(int argc, char *argv[]){
             const char* const shortOps = ":i:p:thun:;";
             const struct option longOpts[] = {
@@ -135,11 +144,19 @@ class ArgumentParser {
         }
 };
 
+/**
+* Signal Handler
+* @param s - signal
+*/
 void signalHandler(int s){
     std::cerr << "Caught signal " << s << std::endl;
     exit(1); 
 }
 
+/**
+* Print all active interfaces
+* @return - function returns 1 if something failed, 0 if everything went right
+*/
 int printDevices(){
     char errbuf[PCAP_ERRBUF_SIZE];
     pcap_if_t* interfaces;
@@ -156,6 +173,11 @@ int printDevices(){
     return 0;
 }
 
+/**
+* Function that return time taken from packet header
+* @param header - packet header
+* @return - function returns timestamp (date and time)
+*/
 std::string getTime(const struct pcap_pkthdr *header){
     time_t time_sec = header->ts.tv_sec;
     const struct tm* globTime = gmtime(&time_sec);
@@ -166,6 +188,13 @@ std::string getTime(const struct pcap_pkthdr *header){
     return timestamp;
 }
 
+/**
+* Function that prints IPv4 header
+* @param header - packet header
+* @param iph - IPv4 header
+* @param packet - actual packet
+* @param type - type of packet
+*/
 void printHeaderIP(const struct pcap_pkthdr *header, const struct ip *iph, const u_char *packet, u_int8_t type){
     std::string src = inet_ntoa(iph->ip_src);
     std::string dst = inet_ntoa(iph->ip_dst);
@@ -190,6 +219,13 @@ void printHeaderIP(const struct pcap_pkthdr *header, const struct ip *iph, const
     }
 }
 
+/**
+* Function that prints IPv6 header
+* @param header - packet header
+* @param iph - IPv6 header
+* @param packet - actual packet
+* @param type - type of packet
+*/
 void printHeaderIPV6(const struct pcap_pkthdr *header, const struct ip6_hdr *iph, const u_char *packet, u_int8_t type){
     std::string srcPort;
     std::string dstPort;
@@ -217,6 +253,12 @@ void printHeaderIPV6(const struct pcap_pkthdr *header, const struct ip6_hdr *iph
 
 }
 
+/**
+* Function that prints ARP header
+* @param header - packet header
+* @param arph - ARP header
+* @param dest - Structure with destination MAC adress
+*/
 void printHeaderARP(const struct pcap_pkthdr *header, const struct ether_arp *arph, const struct ether_header *dest){
     std::string timestamp = getTime(header);
     std::cout << timestamp << " ";
@@ -236,6 +278,12 @@ void printHeaderARP(const struct pcap_pkthdr *header, const struct ether_arp *ar
     std::cout << ", length " << header->len << " bytes" << std::endl << std::endl;;
 }
 
+/**
+* Function that prints line from packet, taken and modified from https://www.tcpdump.org/pcap.html
+* @param packet - actual packet
+* @param len - length
+* @param offset - offset bytes
+*/
 void printLine(const u_char *packet, size_t len, int offset){
 	size_t i;
     const u_char *character;
@@ -265,6 +313,11 @@ void printLine(const u_char *packet, size_t len, int offset){
     return;
 }
 
+/**
+* Function that prints packet, taken and modified from https://www.tcpdump.org/pcap.html
+* @param packet - actual packet
+* @param len - length of packet
+*/
 void printPacket(const u_char *packet, size_t len){
 	size_t len_rem = len;		
 	size_t line_len;
@@ -292,6 +345,12 @@ void printPacket(const u_char *packet, size_t len){
     return;
 }
 
+/**
+* Function that handles incoming packets
+* @param args - useless
+* @param header - packet header
+* @param packet - actual packet
+*/
 void gotPacket(u_char *args, const struct pcap_pkthdr *header, const u_char *packet){
     struct ether_header *p = (struct ether_header *)packet;
     size_t size = header->len;
@@ -311,6 +370,11 @@ void gotPacket(u_char *args, const struct pcap_pkthdr *header, const u_char *pac
     }
 }
 
+/**
+* Function that builds filter depending on program arguments
+* @param args - class where arguments are stored
+* @return - function return built filter as string
+*/
 std::string buildFilter(ArgumentParser args){
     std::string filter = "";
     
@@ -345,6 +409,11 @@ std::string buildFilter(ArgumentParser args){
     return filter;
 }
 
+/**
+* Catching packets, inspired by https://www.tcpdump.org/pcap.html
+* @param args - class that stores arguments
+* @return - function return 0 if everything is success, 1 if something failed
+*/
 int runSniffer(ArgumentParser args){
     char errbuf[PCAP_ERRBUF_SIZE];
     const std::string filter = buildFilter(args);
@@ -382,6 +451,9 @@ int runSniffer(ArgumentParser args){
     return 0;
 }
 
+/**
+* Main function
+*/
 int main(int argc, char *argv[]) {
     struct sigaction sigIntHandler;
     sigIntHandler.sa_handler = signalHandler;
