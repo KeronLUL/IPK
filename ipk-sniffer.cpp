@@ -285,7 +285,7 @@ void printHeaderARP(const struct pcap_pkthdr *header, const struct ether_arp *ar
 }
 
 /**
-* Function that prints line from packet, taken and modified from https://www.tcpdump.org/pcap.html
+* Function that prints line from packet, modified from https://www.tcpdump.org/pcap.html
 * @param packet - actual packet
 * @param len - length
 * @param offset - offset bytes
@@ -320,7 +320,7 @@ void printLine(const u_char *packet, size_t len, int offset){
 }
 
 /**
-* Function that prints packet, taken and modified from https://www.tcpdump.org/pcap.html
+* Function that prints packet, modified from https://www.tcpdump.org/pcap.html
 * @param packet - actual packet
 * @param len - length of packet
 */
@@ -440,6 +440,10 @@ int runSniffer(ArgumentParser args){
     if ((handle = pcap_open_live(args.interface.c_str(), BUFSIZ, 1, 1000, errbuf)) == nullptr){
         std::cerr << errbuf << std::endl;
         return 1;
+    }
+    if (pcap_datalink(handle) != DLT_EN10MB) {
+	std::cerr << "Interface is not ethernet" << std::endl;
+	return 1;
     }
     if (pcap_compile(handle, &fp, filter.c_str(), 0, net) == -1) {
         std::cerr << "Couldn't parse filter " << filter << ": " << pcap_geterr(handle) << std::endl;
