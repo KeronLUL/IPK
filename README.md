@@ -9,7 +9,14 @@ Date: 24.04.2021
 ### Implementation
 
 Program sniffs packets and prints information about packet and packet data. <br>
-Header (information about packet) contains time when packet was sniffed in GMT time, source (IP or MAC adress) and port if protocol has it, destination with samethings as source and length of packet in bytes.
+Header (information about packet) contains time when packet was sniffed in GMT time, source (IP or MAC adress) and port if protocol has it, destination with samethings as source and length of packet in bytes. <br>
+Sniffer takes only ethernet interfaces. <br> <br>
+
+Header's unique information about different packets: <br>
+TCP, and UDP - IP address and port <br>
+ICMP - IP address without port <br>
+ARP - MAC addresses
+
 
 ### Arguments
 *no argument* : Print all available interfaces <br>
